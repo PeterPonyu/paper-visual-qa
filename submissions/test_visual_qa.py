@@ -20,6 +20,9 @@ from pathlib import Path
 import pytest
 
 
+VISUAL_QA = Path(__file__).with_name("visual_qa.py").resolve()
+
+
 @pytest.fixture
 def temp_package():
     """Create temporary package directory."""
@@ -82,7 +85,7 @@ def test_multipage_fixture_renders_every_page(temp_package, multipage_pdf):
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(multipage_pdf),
             "--status", "honest-draft",
@@ -115,7 +118,7 @@ def test_pdf_not_found(temp_package):
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(temp_package / "nonexistent.pdf")
         ],
@@ -132,7 +135,7 @@ def test_minimal_fixture(temp_package, minimal_pdf):
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(minimal_pdf),
             "--status", "honest-draft"
@@ -174,11 +177,39 @@ def test_minimal_fixture(temp_package, minimal_pdf):
     assert pages_check["total_pages"] >= 1
 
 
+def test_review_pdf_uses_only_matching_log(temp_package, minimal_pdf):
+    """Review copies must not inherit warnings from an unrelated main.log."""
+    review_pdf = temp_package / "revision-review.pdf"
+    shutil.copy2(minimal_pdf, review_pdf)
+    (temp_package / "main.log").write_text("Overfull \\hbox (99.0pt too wide)\n")
+
+    result = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(review_pdf)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    data = json.loads((temp_package / "figures-qa" / "manifest.json").read_text())
+    assert data["checks"]["latex"]["status"] == "skip"
+
+    (temp_package / "revision-review.log").write_text(
+        "This is pdfTeX.\nOutput written on revision-review.pdf (1 page).\n"
+    )
+    result = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(review_pdf)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    data = json.loads((temp_package / "figures-qa" / "manifest.json").read_text())
+    latex = data["checks"]["latex"]
+    assert latex["status"] == "ok"
+    assert latex["log_file"] == "revision-review.log"
+
+
 def test_source_newer_than_pdf(temp_package, minimal_pdf):
-    """Test detection of source files newer than PDF."""
-    # Touch a .tex file to make it newer
-    tex_file = temp_package / "newer.tex"
-    tex_file.write_text(r"\documentclass{article}\begin{document}New\end{document}")
+    """Test detection when the source associated with the PDF is newer."""
+    tex_file = temp_package / "minimal.tex"
 
     time.sleep(0.1)  # Ensure timestamp difference
     tex_file.touch()
@@ -186,7 +217,7 @@ def test_source_newer_than_pdf(temp_package, minimal_pdf):
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(minimal_pdf)
         ],
@@ -204,7 +235,7 @@ def test_source_newer_than_pdf(temp_package, minimal_pdf):
 
     freshness = data["checks"]["source_freshness"]
     assert freshness["status"] == "warning", "Should warn about newer sources"
-    assert any("newer.tex" in s for s in freshness["newer_sources"])
+    assert any("minimal.tex" in s for s in freshness["newer_sources"])
 
 
 def test_forbidden_text_patterns(temp_package):
@@ -233,7 +264,7 @@ Codename: B6 experiment
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(pdf_file)
         ],
@@ -271,7 +302,7 @@ def test_missing_graphics(temp_package, minimal_pdf):
     result = subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(minimal_pdf)
         ],
@@ -299,7 +330,7 @@ def test_does_not_overwrite_existing(temp_package, minimal_pdf):
     subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(minimal_pdf)
         ],
@@ -321,7 +352,7 @@ def test_does_not_overwrite_existing(temp_package, minimal_pdf):
     subprocess.run(
         [
             "python",
-            "submissions/visual_qa.py",
+            str(VISUAL_QA),
             str(temp_package),
             str(minimal_pdf)
         ],
@@ -340,6 +371,93 @@ def test_does_not_overwrite_existing(temp_package, minimal_pdf):
 
     pages = data["checks"]["pages"]
     assert any(p["status"] == "existing" for p in pages["pages"])
+
+
+def test_refresh_overwrites_only_canonical_pages(temp_package, minimal_pdf):
+    """Refresh regenerates page rasters while preserving standalone QA assets."""
+    result = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(minimal_pdf)],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+
+    qa_dir = temp_package / "figures-qa"
+    page_png = next(qa_dir.glob("test-package-main-page-*.png"))
+    standalone = qa_dir / "standalone-figure.png"
+    standalone.write_bytes(b"preserve-me")
+    page_mtime = page_png.stat().st_mtime_ns
+
+    time.sleep(0.1)
+    result = subprocess.run(
+        [
+            "python",
+            str(VISUAL_QA),
+            str(temp_package),
+            str(minimal_pdf),
+            "--refresh",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0
+    assert page_png.stat().st_mtime_ns > page_mtime
+    assert standalone.read_bytes() == b"preserve-me"
+
+    data = json.loads((qa_dir / "manifest.json").read_text())
+    assert data["refresh"] is True
+    assert data["checks"]["pages"]["generated"] == 1
+    assert data["checks"]["pages"]["existing"] == 0
+
+
+def test_different_pdf_requires_explicit_refresh(temp_package, minimal_pdf):
+    """A second PDF build cannot silently reuse canonical rasters from the first."""
+    first = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(minimal_pdf)],
+        capture_output=True,
+        text=True,
+    )
+    assert first.returncode == 0
+
+    qa_dir = temp_package / "figures-qa"
+    page_png = next(qa_dir.glob("test-package-main-page-*.png"))
+    original_mtime = page_png.stat().st_mtime_ns
+    original = json.loads((qa_dir / "manifest.json").read_text())
+    original_sha = original["checks"]["pdf_info"]["data"]["sha256"]
+
+    second_tex = temp_package / "second.tex"
+    second_tex.write_text(
+        r"\documentclass{article}\begin{document}Different PDF\end{document}"
+    )
+    subprocess.run(
+        ["pdflatex", "-interaction=batchmode", str(second_tex)],
+        cwd=temp_package,
+        capture_output=True,
+        check=True,
+    )
+    second_pdf = temp_package / "second.pdf"
+
+    rejected = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(second_pdf)],
+        capture_output=True,
+        text=True,
+    )
+    assert rejected.returncode == 1
+    assert "different PDF build" in rejected.stderr
+    assert page_png.stat().st_mtime_ns == original_mtime
+    after_reject = json.loads((qa_dir / "manifest.json").read_text())
+    assert after_reject["checks"]["pdf_info"]["data"]["sha256"] == original_sha
+
+    time.sleep(0.1)
+    refreshed = subprocess.run(
+        ["python", str(VISUAL_QA), str(temp_package), str(second_pdf), "--refresh"],
+        capture_output=True,
+        text=True,
+    )
+    assert refreshed.returncode == 0
+    assert page_png.stat().st_mtime_ns > original_mtime
+    after_refresh = json.loads((qa_dir / "manifest.json").read_text())
+    assert after_refresh["checks"]["pdf_info"]["data"]["sha256"] != original_sha
 
 
 if __name__ == "__main__":

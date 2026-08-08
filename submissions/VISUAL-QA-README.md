@@ -5,13 +5,14 @@ Unified visual quality assurance tool for multi-package paper submissions.
 ## Usage
 
 ```bash
-python submissions/visual_qa.py <package_dir> <pdf_path> [--status STATUS]
+python submissions/visual_qa.py <package_dir> <pdf_path> [--status STATUS] [--refresh]
 ```
 
 **Parameters:**
 - `package_dir`: Package directory (e.g., `submissions/frame-a-eswa`)
 - `pdf_path`: Path to PDF file
 - `--status`: Optional scientific status (`candidate`, `honest-draft`, or `incomplete`)
+- `--refresh`: Regenerate this package's canonical page rasters and contact sheet while preserving standalone QA assets
 
 **Example:**
 ```bash
@@ -74,13 +75,16 @@ Generated in `<package>/figures-qa/`:
 ### Page Rasters
 - Generates 200dpi PNG per page
 - Checks for non-empty pages
-- Does NOT overwrite existing files
+- Reuses existing files by default only when their manifest PDF SHA256 matches the selected PDF
+- Refuses a different PDF build in the same package namespace unless `--refresh` is explicit
+- With `--refresh`, regenerates only `<package>-main-page-###.png` files and the contact sheet
 
 ## Behavior
 
 ### Non-destructive
-- Does NOT clear existing `figures-qa/` contents
-- Does NOT overwrite existing page PNGs (reports as "existing")
+- Does NOT clear unrelated `figures-qa/` contents
+- Does NOT overwrite existing page PNGs unless `--refresh` is explicit
+- Does NOT overwrite standalone figure QA files
 - Does NOT modify source files or rebuild PDFs
 - Safe to run multiple times
 
@@ -95,12 +99,16 @@ python -m pytest submissions/test_visual_qa.py -v
 ```
 
 Tests cover:
-1. Graceful failure when PDF not found
-2. Processing minimal fixture PDF
-3. Detecting source-newer-than-PDF
-4. Detecting forbidden text patterns
-5. Detecting missing graphics
-6. Non-overwriting behavior
+1. Multi-page PDFs render every page to canonical filenames
+2. Graceful failure when PDF not found
+3. Processing a minimal fixture PDF
+4. Matching-log selection for named review PDFs
+5. Detecting source-newer-than-PDF
+6. Detecting forbidden text patterns
+7. Detecting missing graphics
+8. Default non-overwriting behavior
+9. Scoped `--refresh` behavior that preserves standalone QA assets
+10. Different PDF builds require explicit `--refresh` before reusing the package raster namespace
 
 ## Dependencies
 

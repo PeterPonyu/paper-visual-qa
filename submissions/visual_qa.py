@@ -3,7 +3,7 @@
 Unified paper visual QA tool for multi-package submissions.
 
 Usage:
-    python visual_qa.py <package_dir> <pdf_path> [--status candidate|honest-draft|incomplete]
+    python visual_qa.py <package_dir> <pdf_path> [--status candidate|honest-draft|incomplete] [--refresh]
 
 Generates:
     - figures-qa/<package>-main-page-###.png (200dpi per-page rasters)
@@ -12,7 +12,7 @@ Generates:
     - figures-qa/manifest.md (human-readable QA report)
 
 Does NOT:
-    - Clear existing figures-qa contents
+    - Clear unrelated figures-qa contents
     - Overwrite standalone figure QA files
     - Modify source files
     - Build LaTeX
@@ -32,16 +32,24 @@ from typing import Dict, List, Optional, Tuple
 class PaperQA:
     """Paper visual quality assurance."""
 
-    def __init__(self, package_dir: Path, pdf_path: Path, status: Optional[str] = None):
+    def __init__(
+        self,
+        package_dir: Path,
+        pdf_path: Path,
+        status: Optional[str] = None,
+        refresh: bool = False,
+    ):
         self.package_dir = package_dir.resolve()
         self.pdf_path = pdf_path.resolve()
         self.status = status
+        self.refresh = refresh
         self.package_name = self.package_dir.name
         self.qa_dir = self.package_dir / "figures-qa"
         self.report = {
             "package": self.package_name,
             "pdf_path": str(pdf_path),
             "status": status,
+            "refresh": refresh,
             "checks": {}
         }
 
@@ -50,13 +58,18 @@ class PaperQA:
         if not self.pdf_path.exists():
             raise FileNotFoundError(f"PDF not found: {self.pdf_path}")
 
-        # Ensure QA directory exists (don't clear it)
+        # Ensure QA directory exists. Refresh removes only this package's
+        # canonical page rasters; standalone figure QA files remain untouched.
         self.qa_dir.mkdir(exist_ok=True)
+        if self.refresh:
+            for page_file in self.qa_dir.glob(f"{self.package_name}-main-page-*.png"):
+                page_file.unlink()
 
         print(f"Running QA for {self.package_name}...")
 
         # Run all checks
         self.report["checks"]["pdf_info"] = self._check_pdf_info()
+        self._validate_existing_raster_namespace()
         self.report["checks"]["pdf_fonts"] = self._check_pdf_fonts()
         self.report["checks"]["text_scan"] = self._check_text_content()
         self.report["checks"]["latex"] = self._check_latex()
@@ -101,6 +114,33 @@ class PaperQA:
             return {"status": "ok", "data": info}
         except subprocess.CalledProcessError as e:
             return {"status": "error", "message": str(e)}
+
+    def _validate_existing_raster_namespace(self) -> None:
+        """Reject stale page rasters from another PDF unless refresh is explicit."""
+        page_files = list(self.qa_dir.glob(f"{self.package_name}-main-page-*.png"))
+        if self.refresh or not page_files:
+            return
+
+        manifest_path = self.qa_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise RuntimeError(
+                "Existing canonical page rasters have no manifest; rerun with --refresh"
+            )
+
+        try:
+            previous = json.loads(manifest_path.read_text())
+            previous_sha = previous["checks"]["pdf_info"]["data"]["sha256"]
+        except (OSError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(
+                "Existing raster manifest has no valid PDF SHA256; rerun with --refresh"
+            ) from exc
+
+        current_sha = self.report["checks"]["pdf_info"]["data"]["sha256"]
+        if previous_sha != current_sha:
+            raise RuntimeError(
+                "Existing canonical page rasters belong to a different PDF build; "
+                "rerun with --refresh"
+            )
 
     def _check_pdf_fonts(self) -> Dict:
         """Check font embedding with pdffonts."""
@@ -154,7 +194,7 @@ class PaperQA:
             patterns = {
                 "placeholder": r"(?i)(TODO|FIXME|XXX|PLACEHOLDER|\?\?\?)",
                 "internal_path": r"(/home/|/Users/|C:\\|edit-harness/|branches/|\.omc/)",
-                "codename": r"\b(B6|E[0-9]|D[0-9]|G[0-9]|H[0-9]|P[0-9]|MIX_[ABC]|run_[a-z0-9]+|ROME|MEMIT|AlphaEdit)\b"
+                "codename": r"\b(B6|E[0-9]+|D[0-9]+|G[0-9]+|H[0-9]+|MIX_[ABC]|run_[a-z0-9_]+)\b"
             }
 
             hits = {}
@@ -174,19 +214,23 @@ class PaperQA:
             return {"status": "error", "message": str(e)}
 
     def _check_latex(self) -> Dict:
-        """Check LaTeX build logs for errors/warnings."""
-        # Look for .log file
-        log_paths = list(self.package_dir.glob("*.log"))
-        if not log_paths:
-            # Try flat/ subdirectory for ieee
+        """Check the log associated with the selected PDF."""
+        pdf_stem = self.pdf_path.stem
+        exact_logs = [
+            self.pdf_path.with_suffix(".log"),
+            self.package_dir / "flat" / f"{pdf_stem}.log",
+        ]
+        log_path = next((path for path in exact_logs if path.exists()), None)
+
+        if log_path is None and pdf_stem == "main":
+            fallback_logs = sorted(self.package_dir.glob("*.log"))
             flat_dir = self.package_dir / "flat"
-            if flat_dir.exists():
-                log_paths = list(flat_dir.glob("*.log"))
+            if not fallback_logs and flat_dir.exists():
+                fallback_logs = sorted(flat_dir.glob("*.log"))
+            log_path = fallback_logs[0] if fallback_logs else None
 
-        if not log_paths:
+        if log_path is None:
             return {"status": "skip", "message": "No .log file found"}
-
-        log_path = log_paths[0]  # Use first log found
 
         try:
             with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -195,9 +239,15 @@ class PaperQA:
             errors = re.findall(r"^! (.+)$", log_content, re.MULTILINE)
             overfull = re.findall(r"Overfull \\[hv]box", log_content)
             undefined = re.findall(r"undefined", log_content, re.IGNORECASE)
+            if errors:
+                status = "error"
+            elif overfull or undefined:
+                status = "warning"
+            else:
+                status = "ok"
 
             return {
-                "status": "ok",
+                "status": status,
                 "log_file": str(log_path.relative_to(self.package_dir)),
                 "errors": len(errors),
                 "overfull": len(overfull),
@@ -208,15 +258,21 @@ class PaperQA:
             return {"status": "error", "message": str(e)}
 
     def _check_source_freshness(self) -> Dict:
-        """Check if source files are newer than PDF."""
+        """Check whether sources associated with the selected PDF are newer."""
         try:
             pdf_mtime = self.pdf_path.stat().st_mtime
+            pdf_stem = self.pdf_path.stem
+            exact_sources = [
+                self.pdf_path.with_suffix(".tex"),
+                self.package_dir / "flat" / f"{pdf_stem}.tex",
+            ]
+            tex_files = [path for path in exact_sources if path.exists()]
 
-            # Check main.tex and other .tex files
-            tex_files = list(self.package_dir.glob("*.tex"))
-            sections_dir = self.package_dir / "sections"
-            if sections_dir.exists():
-                tex_files.extend(sections_dir.glob("*.tex"))
+            if not tex_files:
+                tex_files = list(self.package_dir.glob("*.tex"))
+                sections_dir = self.package_dir / "sections"
+                if sections_dir.exists():
+                    tex_files.extend(sections_dir.glob("*.tex"))
 
             newer_files = []
             for tex_file in tex_files:
@@ -226,19 +282,42 @@ class PaperQA:
             return {
                 "status": "warning" if newer_files else "ok",
                 "pdf_mtime": pdf_mtime,
+                "checked_sources": [
+                    str(tex_file.relative_to(self.package_dir)) for tex_file in tex_files
+                ],
                 "newer_sources": newer_files
             }
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
     def _check_graphics(self) -> Dict:
-        """Check for missing includegraphics references."""
+        """Check for missing includegraphics references in the selected source."""
         try:
-            # Find all .tex files
-            tex_files = list(self.package_dir.glob("*.tex"))
-            sections_dir = self.package_dir / "sections"
-            if sections_dir.exists():
-                tex_files.extend(sections_dir.glob("*.tex"))
+            pdf_stem = self.pdf_path.stem
+            exact_sources = [
+                self.pdf_path.with_suffix(".tex"),
+                self.package_dir / "flat" / f"{pdf_stem}.tex",
+            ]
+            tex_files = [path for path in exact_sources if path.exists()]
+
+            # Formal manuscript and review PDFs are source-scoped. Legacy alternate
+            # PDFs retain the package-level root-source sweep for compatibility.
+            formal_pdf = (
+                pdf_stem == "main"
+                or pdf_stem.endswith("-honest-review")
+                or pdf_stem.endswith("-revision-review")
+            )
+            if tex_files and not formal_pdf:
+                tex_files.extend(
+                    path for path in self.package_dir.glob("*.tex")
+                    if path not in tex_files
+                )
+
+            if not tex_files:
+                tex_files = list(self.package_dir.glob("*.tex"))
+                sections_dir = self.package_dir / "sections"
+                if sections_dir.exists():
+                    tex_files.extend(sections_dir.glob("*.tex"))
 
             missing = []
             for tex_file in tex_files:
@@ -356,8 +435,12 @@ class PaperQA:
     def _generate_contact_sheet(self):
         """Generate contact sheet (grid overview) using ImageMagick montage."""
         try:
-            # Find all generated page PNGs
-            page_files = sorted(self.qa_dir.glob(f"{self.package_name}-main-page-*.png"))
+            pages_check = self.report.get("checks", {}).get("pages", {})
+            page_files = [
+                self.qa_dir / page["file"]
+                for page in pages_check.get("pages", [])
+                if (self.qa_dir / page["file"]).exists()
+            ]
 
             if not page_files:
                 print("No page PNGs found for contact sheet")
@@ -446,7 +529,8 @@ class PaperQA:
         lines.append("## LaTeX Build")
         lines.append("")
         latex = self.report["checks"]["latex"]
-        if latex["status"] == "ok":
+        if latex["status"] in {"ok", "warning"}:
+            lines.append(f"- **Status:** {latex['status']}")
             lines.append(f"- **Log file:** `{latex['log_file']}`")
             lines.append(f"- **Errors:** {latex['errors']}")
             lines.append(f"- **Overfull:** {latex['overfull']}")
@@ -509,6 +593,11 @@ def main():
         choices=["candidate", "honest-draft", "incomplete"],
         help="Scientific status (optional)"
     )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Regenerate canonical page rasters for the selected PDF"
+    )
 
     args = parser.parse_args()
 
@@ -522,7 +611,7 @@ def main():
         return 1
 
     # Run QA
-    qa = PaperQA(args.package_dir, args.pdf_path, args.status)
+    qa = PaperQA(args.package_dir, args.pdf_path, args.status, refresh=args.refresh)
     import datetime
     qa.report["timestamp"] = datetime.datetime.now().isoformat()
 

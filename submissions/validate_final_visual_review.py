@@ -16,11 +16,11 @@ READY = (
         "name": "D2",
         "package": ROOT / "d2-neurocomputing",
         "pdf": ROOT / "d2-neurocomputing" / "main-honest-review.pdf",
-        "pages": 35,
+        "pages": 34,
         "figures": 5,
-        "review_sha": "bd5e2f57382b49953e6a6fb76fe4c7a20e31d63fae17c03fa53b649db8608a1a",
-        "page_sheet_sha": "3062ab55ec5e391d9e35b3eb55d6c1f9d669ec44a1f18ce8026a3922aab5451a",
-        "figure_sheet_sha": "c6f7b475bc6db16361ba8a421de4e3e60b4cc8f58da9354f0fc1e6ba4b833536",
+        "review_sha": "d5514f53f842735d8afb8baa65ba006a91f268fda7aa1f6ca38db721411fe6e7",
+        "page_sheet_sha": "d26b46a3b4d5a69359f62d83eeb08683147d80915a762fb0c1b611ea73a8b8d8",
+        "figure_sheet_sha": "95435decb10b0fa47308e112609847384736a4000c8dc4d9cc7d5710c83700b2",
         "frozen": (
             (
                 ROOT / "d2-neurocomputing" / "main.pdf",
@@ -34,8 +34,8 @@ READY = (
         "pdf": ROOT / "ieee" / "flat" / "main-honest-review.pdf",
         "pages": 14,
         "figures": 7,
-        "review_sha": "0858794f832877800ad93d2ed194058a10912919743c2be0f291fb6dc1498d73",
-        "page_sheet_sha": "626e57aeaa6c9ef6ca10c1a09f97d482df3dae3facadbfaf9af7bbedfedf15b9",
+        "review_sha": "2099bb3873ac54857fd922a8a7b0e01db3f238c44081ae76cb788d0b6e686bd3",
+        "page_sheet_sha": "dd202f8c765936dd9c4521c8fee09832e74aa3dca4f1f2a0621c852d766cd93e",
         "figure_sheet_sha": "2e53354e956ef9be02d93349a67fcf409659ebeb25e1d2a4e0e284075854b6fd",
         "frozen": (
             (
@@ -52,11 +52,11 @@ READY = (
         "name": "Frame-A",
         "package": ROOT / "frame-a-eswa",
         "pdf": ROOT / "frame-a-eswa" / "main-honest-review.pdf",
-        "pages": 18,
+        "pages": 19,
         "figures": 10,
-        "review_sha": "538bb8652ade48db4f9822b9751df366c81e8aef29fb1415dc9f85e11790984f",
-        "page_sheet_sha": "28c6d2f9de7f99b5f4f9146f17e48dc4e0067e65d8eb73c359cd34ce9fbc5f3e",
-        "figure_sheet_sha": "0997c5ed48a13c60920b41917502361d50d417cd42c0db704751e6aff1bf2c6e",
+        "review_sha": "ce7a18e8891d3337b0aac0b0ae9d172a4b50ab4cbc4f9e7ffbc5a5833ffb10f5",
+        "page_sheet_sha": "deadf0aae94d90c1af9f2a13280f69423b3f709a7af982d8350539063511039b",
+        "figure_sheet_sha": "f266fd9e5ddf2dfee9dc8aa8397c79cd5de4fe75d03e752887c4981eda72f4fc",
         "frozen": (
             (
                 ROOT / "frame-a-eswa" / "main.pdf",
@@ -68,15 +68,15 @@ READY = (
         "name": "PaperB",
         "package": ROOT / "paper-b-neurocomputing",
         "pdf": ROOT / "paper-b-neurocomputing" / "main-honest-review.pdf",
-        "pages": 29,
+        "pages": 30,
         "figures": 5,
-        "review_sha": "a29de6a66ee03ac1fe78ad5c71f6cd012344a9b4ac2152536123a33008a52f1e",
-        "page_sheet_sha": "017d87187964bb0a371533fc5571e4afa710193d4ef01654bf5740e5033e4e56",
-        "figure_sheet_sha": "e6c61e0d40e945bc8061356c698e6670885e56dfc78d89c6c2b18aad2a29b1f8",
+        "review_sha": "a7f12ecb7c55e76314deaaac532ca450de10bad66615a4970f37fe914d5aff03",
+        "page_sheet_sha": "9dfd3218b75b869964dfb2e78e3e7b2bf280f8de50563cdd262c4713d957a4f7",
+        "figure_sheet_sha": "9056431483b717280ea98910d4e92edfe25db20a7366c8d98941420d5ec6f0a3",
         "frozen": (
             (
                 ROOT / "paper-b-neurocomputing" / "main.pdf",
-                "b79bd033e1da5d1b05df845f9ed014b4aaaed94d5ce8a9f47786753c13c0299a",
+                "a40377c17e3ae559cf37c701803c3b3a098849cfe47a3cf211aaa284cbbf5c9d",
             ),
         ),
     },
