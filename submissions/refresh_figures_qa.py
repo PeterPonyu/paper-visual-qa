@@ -17,6 +17,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from PIL import Image
+
 ROOT = Path(__file__).resolve().parent
 
 STANDALONE_WRAPPER = r"""\documentclass[border=2pt]{{standalone}}
@@ -55,29 +57,23 @@ def rasterize_tikz(tex: Path, png: Path, workdir: Path) -> None:
 
 
 def image_geometry(path: Path):
-    proc = subprocess.run(
-        ["python3", "-c",
-         "from PIL import Image; import sys;"
-         f"im=Image.open('{path}'); print(im.width, im.height)"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
+    try:
+        with Image.open(path) as im:
+            return im.width, im.height
+    except OSError:
         return None
-    width, height = proc.stdout.split()
-    return int(width), int(height)
 
 
 def nonwhite_fraction(path: Path):
-    proc = subprocess.run(
-        ["python3", "-c",
-         "from PIL import Image;"
-         f"im=Image.open('{path}').convert('L');h=im.histogram();t=sum(h);"
-         "print(round(sum(h[0:250])/t,6))"],
-        capture_output=True, text=True,
-    )
-    if proc.returncode != 0:
+    try:
+        with Image.open(path) as im:
+            hist = im.convert("L").histogram()
+        total = sum(hist)
+        if total <= 0:
+            return None
+        return round(sum(hist[0:250]) / total, 6)
+    except OSError:
         return None
-    return float(proc.stdout.strip())
 
 
 def contact_sheet(pngs, out: Path) -> None:

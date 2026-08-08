@@ -331,26 +331,46 @@ class PaperQA:
                 )
 
                 for graphic in graphics:
-                    # Try common extensions
+                    graphic_rel = Path(graphic)
+                    if graphic_rel.is_absolute() or ".." in graphic_rel.parts:
+                        missing.append({
+                            "file": str(tex_file.relative_to(self.package_dir)),
+                            "graphic": graphic,
+                        })
+                        continue
+
+                    # Try common extensions under the package root only.
+                    found = False
                     for ext in ["", ".png", ".pdf", ".jpg", ".eps"]:
-                        graphic_path = self.package_dir / f"{graphic}{ext}"
-                        if graphic_path.exists():
+                        graphic_path = (self.package_dir / f"{graphic}{ext}").resolve()
+                        if (
+                            graphic_path.is_relative_to(self.package_dir.resolve())
+                            and graphic_path.exists()
+                        ):
+                            found = True
                             break
-                    else:
-                        # Also check figures/, figures-r/, figures-src/
-                        for subdir in ["figures", "figures-r", "figures-src", "figures-tex"]:
-                            for ext in ["", ".png", ".pdf", ".jpg", ".eps"]:
-                                graphic_path = self.package_dir / subdir / f"{Path(graphic).name}{ext}"
-                                if graphic_path.exists():
-                                    break
-                            else:
-                                continue
+                    if found:
+                        continue
+
+                    # Also check figures/, figures-r/, figures-src/
+                    for subdir in ["figures", "figures-r", "figures-src", "figures-tex"]:
+                        for ext in ["", ".png", ".pdf", ".jpg", ".eps"]:
+                            graphic_path = (
+                                self.package_dir / subdir / f"{graphic_rel.name}{ext}"
+                            ).resolve()
+                            if (
+                                graphic_path.is_relative_to(self.package_dir.resolve())
+                                and graphic_path.exists()
+                            ):
+                                found = True
+                                break
+                        if found:
                             break
-                        else:
-                            missing.append({
-                                "file": str(tex_file.relative_to(self.package_dir)),
-                                "graphic": graphic
-                            })
+                    if not found:
+                        missing.append({
+                            "file": str(tex_file.relative_to(self.package_dir)),
+                            "graphic": graphic
+                        })
 
             return {
                 "status": "warning" if missing else "ok",

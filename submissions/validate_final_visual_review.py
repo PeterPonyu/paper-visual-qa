@@ -91,6 +91,18 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def safe_under(root: Path, name: str) -> Path:
+    """Resolve name under root; reject absolute paths and `..` escapes."""
+    root = root.resolve()
+    rel = Path(name)
+    if rel.is_absolute() or ".." in rel.parts:
+        raise ValueError(f"path escapes root: {name}")
+    candidate = (root / rel).resolve()
+    if not candidate.is_relative_to(root):
+        raise ValueError(f"path escapes root: {name}")
+    return candidate
+
+
 def pdf_text(path: Path, first_page_only: bool = False) -> str:
     command = ["pdftotext"]
     if first_page_only:
@@ -127,10 +139,10 @@ def main() -> None:
         assert spec["figure_sheet_sha"] in index_text
 
         for page in manifest["checks"]["pages"]["pages"]:
-            raster = qa / page["file"]
+            raster = safe_under(qa, page["file"])
             assert raster.is_file() and raster.stat().st_size > 1000, raster
         for figure in figure_manifest["figures"]:
-            raster = qa / figure["png"]
+            raster = safe_under(qa, figure["png"])
             assert raster.is_file() and raster.stat().st_size == figure["bytes"], raster
             assert sha256(raster) == figure["sha256"]
 
